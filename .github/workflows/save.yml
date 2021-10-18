@@ -1,0 +1,64 @@
+name: save
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v2
+      - name: nodejs
+        uses: actions/setup-node@v1
+        with:
+          node-version: '12.x'
+      - name: Setup SSH key
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "${SSH_KEY}" > ~/.ssh/id_rsa
+          chmod 400 ~/.ssh/id_rsa
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+      - name: install
+        run: yarn install
+      - name: commit
+        run: |
+          now=`TZ=Asia/Tokyo date '+%Y%m%d%H%M'`
+          year=`TZ=Asia/Tokyo date '+%Y'`
+          month=`TZ=Asia/Tokyo date '+%m'`
+          date=`TZ=Asia/Tokyo date '+%d'`
+          savepath="images/$year/$month/$date/$now.jpg"
+          url="https://www.ktr.mlit.go.jp/keihin/webcam/cam_hino-bridge_OBS.jpg?${now}"
+          mkdir -p "images"
+          mkdir -p "images/${year}"
+          mkdir -p "images/${year}/${month}"
+          mkdir -p "images/${year}/${month}/${date}"
+          curl -o $savepath $url
+          currentmd5=`md5sum $savepath | awk '{ print $1 }'`
+          previousimagepath=`tail -n 1 images/24h.txt`
+          previousimagepath="${previousimagepath//keihin00169\//}"
+          previousmd5=`md5sum ${previousimagepath} | awk '{ print $1 }'`
+          echo $currentmd5
+          echo $previousmd5
+          if [[ $currentmd5 != $previousmd5 ]]; then tail -n 143 images/24h.txt >> images/24hp.txt; fi
+          if [[ $currentmd5 != $previousmd5 ]]; then cp images/24hp.txt images/24h.txt; fi
+          if [[ $currentmd5 != $previousmd5 ]]; then cp $savepath latest.jpg; fi
+          if [[ $currentmd5 != $previousmd5 ]]; then rm images/24hp.txt; fi
+          if [[ $currentmd5 != $previousmd5 ]]; then echo "keihin00169/$savepath" >> "images/24h.txt"; fi
+          if [[ $currentmd5 != $previousmd5 ]]; then echo "keihin00169/$savepath" >> "images/${year}/${month}/${date}/images.txt"; fi
+          if [[ $currentmd5 == $previousmd5 ]]; then rm $savepath ; fi
+          git config --local user.email "info@laboneko.jp"
+          git config --local user.name "labeneko"
+          git add .
+          git commit -m "画像を保存 ${now}" -a || true
+      - name: Push changes
+        uses: ad-m/github-push-action@master
+        with:
+          github_token: ${{ secrets.TOKEN }}
+          branch: main
